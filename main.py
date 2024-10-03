@@ -39,7 +39,7 @@ class Laimanhua:
             result.append({dt.h3.string: urljoin(self.url, dt.a['href'])})
         return result
 
-    def parse_chapter(self, comic_url: str) -> list[dict]:
+    def parse_chapter(self, comic_url: str, comicname: str) -> list[dict]:
         r = requests.get(comic_url, headers=self.header, proxies=self.proxies)
         r.encoding = 'gb2312'
         soup = BeautifulSoup(r.text, 'html.parser')
@@ -85,7 +85,8 @@ class Laimanhua:
         index = int(input('请输入您要下载的漫画id:'))
         time.sleep(1)
 
-        chapter_urls = self.parse_chapter(result[index - 1].popitem()[1])
+        comicurl, comicname = result[index - 1].popitem()
+        chapter_urls = self.parse_chapter(comicurl, comicname)
         time.sleep(1)
         for chapter in chapter_urls:
             results: list[Future] = []
