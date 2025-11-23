@@ -1,46 +1,78 @@
-from concurrent.futures import ThreadPoolExecutor, Future
-from hashlib import md5
+import base64
+import os
+import random
+import re
+import sys
+import tempfile
+from concurrent.futures import Future, ThreadPoolExecutor
 from shutil import move
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urljoin
+
+import requests
 from bs4 import BeautifulSoup
-import requests, sys, tempfile, time, os, json, random
+from rich.progress import track
 
 
 class Laimanhua:
-    location = os.path.join(os.path.dirname(sys.argv[0]), 'downloads')
+    location = os.path.join(os.path.dirname(sys.argv[0]), "downloads")
     proxies = {}
-    url = 'https://m.laimanhua8.com/'
+    url = "https://www.laimanhua88.com"
     picurls = [
-        'https://xwdf.kingwar.cn', 'https://mhreswhm.kingwar.cn',
-        'https://qwe123.kingwar.cn', 'https://resmhpic.kingwar.cn',
-        'https://reszxc.kingwar.cn']
+        "https://xwdf.kingwar.cn",
+        "https://mhreswhm.kingwar.cn",
+        "https://qwe123.kingwar.cn",
+        "https://resmhpic.kingwar.cn",
+        "https://reszxc.kingwar.cn",
+        "https://mhpic5eer.kingwar.cn",
+        "https://mhpic7ffr.tgmhfc.uk",
+    ]
     picurl = random.choice(picurls)
-    searchurl = 'https://m.laimanhua8.com/e/search/'
+    searchurl = "https://www.laimanhua88.com/s81/search/"
 
-    header = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0'}
+    header = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
+    }
     picheader = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0',
-        'Referer': 'https://m.laimanhua8.com/'}
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0",
+        "Referer": "https://laimanhua88.com/",
+    }
     searchheader = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0',
-        'Origin': url}
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0",
+        "Origin": url,
+    }
 
     def __init__(self, search_kw: str) -> None:
         if not os.path.exists(self.location):
             os.mkdir(self.location)
         self.kw = search_kw
 
-    def search(self, keyword: str) -> list[dict]:
-        print('正在搜索', keyword)
-        self.searchheader['Referer'] = 'https://m.laimanhua8.com/e/search/result/?searchid=' + md5(keyword.encode()).hexdigest().upper()
-        r = requests.post(self.searchurl, data={'key': keyword.encode('gbk')}, headers=self.searchheader, proxies=self.proxies)
-        r.encoding = 'gb2312'
-        soup = BeautifulSoup(r.text, 'html.parser')
-        ul = soup.find('ul', id='detail')
-        li = ul.find_all('li')
+    def post(self, url, **kwargs):
+        if self.proxies:
+            kwargs["proxies"] = self.proxies
+        # print(kwargs)
+        return requests.post(url, **kwargs)
+
+    def get(self, url, **kwargs):
+        if self.proxies:
+            kwargs["proxies"] = self.proxies
+        # print(kwargs)
+        return requests.get(url, **kwargs)
+
+    def search(self) -> list[dict]:
+        print("正在搜索", self.kw)
+        self.searchheader["Referer"] = "https://www.laimanhua88.com/"
+        r = self.post(
+            self.searchurl,
+            data={"key": self.kw.encode("gbk")},
+            headers=self.searchheader,
+        )
+        r.encoding = "gb2312"
+        soup = BeautifulSoup(r.text, "html.parser")
+        ul = soup.find("div", class_="dmList").ul
+        li = ul.find_all("li")
         result: list[dict] = []
         for dt in li:
-            result.append({dt.h3.string: urljoin(self.url, dt.a['href'])})
+            result.append({dt.dt.a.string: urljoin(self.url, dt.dt.a["href"])})
         return result
 
     def parse_chapter(self, comic_url: str, comicname: str) -> list[dict]:
@@ -48,13 +80,13 @@ class Laimanhua:
         if not os.path.exists(self.comiclocate):
             os.mkdir(self.comiclocate)
 
-        r = requests.get(comic_url, headers=self.header, proxies=self.proxies)
-        r.encoding = 'gb2312'
-        soup = BeautifulSoup(r.text, 'html.parser')
-        div = soup.find('div', id='chapterList')
+        r = self.get(comic_url, headers=self.header)
+        r.encoding = "gb2312"
+        soup = BeautifulSoup(r.text, "html.parser")
+        ul = soup.find("div", id="play_0").ul
         result: list[dict] = []
-        for a in div.find_all('a'):
-            result.append({a.string: urljoin(self.url, a['href'])})
+        for a in ul.find_all("a"):
+            result.append({a.get_text(): urljoin(self.url, a["href"])})
         return result
 
     def get_pic(self, chapter: dict[str, str]) -> list[str]:
@@ -63,62 +95,68 @@ class Laimanhua:
         if not os.path.exists(self.chapterlocate):
             os.mkdir(self.chapterlocate)
 
-        r = requests.get(url, headers=self.header, proxies=self.proxies)
-        r.encoding = 'gb2312'
-        soup = BeautifulSoup(r.text, 'html.parser')
-        scripts = soup.find_all('script')
-        info = scripts[6].string.split('{')[1].split('}')[0]
-        info = json.loads('{' + info + '}')
+        r = self.get(url, headers=self.header)
+        r.encoding = "gb2312"
+        soup = BeautifulSoup(r.text, "html.parser")
+        scripts = soup.find_all("script")
+        script = re.search("var picTree ='(.*)';", str(scripts))
+        if script:
+            pics = (
+                base64.b64decode(script.group(1)).decode("utf8").split("$qingtiandy$")
+            )
+        # info = scripts[6].string.split("{")[1].split("}")[0]
+        # info = json.loads("{" + info + "}")
         picurls = []
-        for u in info['images']:
-            picurl = urljoin(urljoin(self.picurl, info['path'].replace('・', '·')), u)
+        for uri in pics:
+            picurl = urljoin(self.picurl, uri)
             picurls.append(picurl)
         return picurls
 
     def download(self, picurl: str) -> None:
-        piclocate = os.path.join(self.chapterlocate, picurl.split('/')[-1].strip())
+        piclocate = os.path.join(self.chapterlocate, picurl.split("/")[-1].strip())
         if os.path.exists(piclocate):
             return
-        r = requests.get(picurl, headers=self.picheader, proxies=self.proxies)
-        tmpf = tempfile.NamedTemporaryFile('wb', delete=False)
+        r = self.get(picurl, headers=self.picheader)
+        tmpf = tempfile.NamedTemporaryFile("wb", delete=False)
         tmpf.write(r.content)
         tmpf.close()
         move(tmpf.name, piclocate)
 
     def start(self):
-        result = self.search(self.kw)
+        result = self.search()
         for i in range(len(result)):
-            print('{:<2}: {}'.format(i+1, result[i].copy().popitem()[0]))
-        print('\n如果未找到您所需的漫画，请提供更多搜索关键字来提升精确度!')
-        index = int(input('请输入您要下载的漫画id:'))
-        time.sleep(1)
+            print("{:<2}: {}".format(i + 1, result[i].copy().popitem()[0]))
+        print("\n如果未找到您所需的漫画，请提供更多搜索关键字来提升精确度!")
+        if len(result) != 1:
+            index = int(input("请输入您要下载的漫画id:"))
+        else:
+            index = 1
 
         comicname, comicurl = result[index - 1].popitem()
         chapter_urls = self.parse_chapter(comicurl, comicname)
-        time.sleep(1)
         for chapter in chapter_urls:
             results: list[Future] = []
             pics = self.get_pic(chapter)
             chaptername, _ = chapter.popitem()
-            time.sleep(1)
-            with ThreadPoolExecutor(4) as execute:
+            with ThreadPoolExecutor(8) as execute:
                 for pic in pics:
                     res = execute.submit(self.download, pic)
                     results.append(res)
-                for r in results:
-                    print('正在下载{}...'.format(chaptername), end='\r')
+                for r in track(
+                    results, description="正在下载{}...".format(chaptername)
+                ):
                     r.result()
-            print()
-        print('下载完成!')
+        print("下载完成!")
         sys.exit(0)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print('usage:', sys.argv[0], '<keyword> [proxy]')
+        print("usage:", sys.argv[0], "<keyword> [proxy]")
         sys.exit(0)
 
     manhua = Laimanhua(sys.argv[1])
     if len(sys.argv) > 2:
-        manhua.proxies['http'] = sys.argv[2].strip()
-        manhua.proxies['https'] = sys.argv[2].strip()
+        manhua.proxies["http"] = sys.argv[2].strip()
+        manhua.proxies["https"] = sys.argv[2].strip()
     manhua.start()
